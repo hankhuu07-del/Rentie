@@ -30,11 +30,11 @@ Các chức năng dưới đây hoạt động trong phạm vi dữ liệu mô p
 | 24 | Xử lý nhẹ | disputes với Thủ kho → Kết luận hoặc chuyển Admin |
 | 25 | Xử lý nặng | disputes với Admin → Quyết định và tổng phạt sau xử lý |
 | 26 | Danh mục | admin → Thêm, sửa tên, ẩn/hiện; chỉ xóa danh mục chưa sử dụng |
-| 27 | Tài khoản | admin → Danh sách sinh viên, khóa/mở tài khoản |
+| 27 | Tài khoản | admin → Thêm, sửa, vai trò và bảng quyền, khóa/mở; chỉ xóa tài khoản chưa có lịch sử và số dư |
 
 ## Quy tắc triển khai cần biết khi thuyết trình
 
-- Đơn chờ thanh toán chưa giữ lịch; thanh toán kiểm tra lịch lại. Không thể bàn giao một vật phẩm đang nằm ở đơn khác chưa nhận trả.
+- Đơn chờ thanh toán giữ khoảng lịch đã chọn trong 15 phút. Hết hạn tự nhả lịch; thanh toán kiểm tra lại hạn giữ và xung đột. Không thể bàn giao một vật phẩm đang nằm ở đơn khác chưa nhận trả.
 - Giá/cọc/phí lưu theo đơn, thay đổi cấu hình không sửa đơn cũ.
 - Người dùng luôn đối chiếu trước khi ghi nhận tiền và giao nhận. Quét mã chỉ tìm và kiểm tra hồ sơ.
 - Đồ ký gửi đang được thuê vẫn chiếm chỗ dự phòng. Sửa dung tích đồ đang lưu không được vượt sức chứa.
