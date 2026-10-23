@@ -1,0 +1,34 @@
+/* Additional business rules for the frontend demonstration. */
+(function(R){
+'use strict';
+const TTL=15*60000,open=['pending','booked','active','returned','disputed'];
+const base={...R};
+R.HOLD_MS=TTL;
+R.isSchoolEmail=email=>/^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@(?:[A-Z0-9](?:[A-Z0-9-]*[A-Z0-9])?\.)+edu\.vn$/i.test(String(email).trim());
+R.normalize=function(db,now=Date.now()){
+ let changed=false;
+ db.bookings.forEach(b=>{if(b.status==='pending'&&!b.holdUntil){b.holdUntil=new Date(+new Date(b.created)+TTL).toISOString();changed=true;}});
+ db.consignments.forEach((c,n)=>{if(['active','pickup'].includes(c.status)&&!c.shelf){c.shelf=['A1-01','A2-01','B1-01'][n%3];changed=true;}});
+ return R.expireHolds(db,now)||changed;
+};
+R.expireHolds=function(db,now=Date.now()){
+ let changed=false;
+ db.bookings.forEach(b=>{if(b.status==='pending'&&+new Date(b.holdUntil||(+new Date(b.created)+TTL))<=now){b.status='expired';b.expiredAt=new Date(now).toISOString();b.cancelReason='Hết 15 phút chờ thanh toán';changed=true;}});
+ return changed;
+};
+R.isHolding=(b,now=Date.now())=>b.status==='pending'&&+new Date(b.holdUntil||(+new Date(b.created)+TTL))>now;
+R.conflict=function(db,id,start,end,exclude){return db.bookings.some(b=>b.id!==exclude&&b.itemId===id&&(R.isHolding(b)||['booked','active','returned','disputed'].includes(b.status))&&+new Date(start)<+new Date(b.end)&&+new Date(end)>+new Date(b.start));};
+R.itemBusy=(db,id)=>db.bookings.some(b=>b.itemId===id&&(R.isHolding(b)||['booked','active','returned','disputed'].includes(b.status)));
+R.createBooking=function(db,data){R.expireHolds(db);if(R.conflict(db,data.itemId,data.start,data.end))throw Error('Lịch này đang được giữ hoặc đã có người thuê. Hãy chọn lịch khác hoặc chờ hết hạn giữ 15 phút.');const b=base.createBooking(db,data);b.holdUntil=new Date(Date.now()+TTL).toISOString();return b;};
+R.pay=function(db,id){R.expireHolds(db);const b=R.booking(db,id);if(b.status==='expired')throw Error('Đã hết 15 phút giữ lịch. Chưa trừ tiền; hãy tạo đơn mới.');if(!R.isHolding(b))throw Error('Đơn không còn thời gian giữ lịch để thanh toán.');if(R.conflict(db,b.itemId,b.start,b.end,b.id))throw Error('Lịch đã được giữ bởi đơn khác. Hãy kiểm tra lại.');const r=base.pay(db,id);r.paidAt=new Date().toISOString();return r;};
+R.publish=function(db,data,id){R.expireHolds(db);if(id&&R.itemBusy(db,id))throw Error('Vật phẩm đang có đơn chưa kết thúc hoặc đang giữ lịch. Chưa thể sửa thông tin, giá và cọc.');return base.publish(db,data,id);};
+R.consignment=function(db,id,action){const c=db.consignments.find(c=>c.id===id);if(action==='request'&&c&&R.itemBusy(db,c.itemId))throw Error('Cần kết thúc đơn thuê và thời gian giữ lịch trước khi nhận lại.');return base.consignment(db,id,action);};
+R.setShelf=function(db,id,value){R.role(db,'staff');const c=db.consignments.find(c=>c.id===id),s=String(value||'').trim();if(!c||!['active','pickup'].includes(c.status))throw Error('Chỉ xếp kệ cho đợt ký gửi đang hoạt động.');if(!s||s.length>40)throw Error('Nhập vị trí kệ từ 1 đến 40 ký tự.');c.shelf=s;return c;};
+R.register=function(db,data){const email=String(data.email||'').trim().toLowerCase(),sid=String(data.studentId||'').trim(),name=String(data.name||'').trim();if(!R.isSchoolEmail(email))throw Error('Email không hợp lệ. Hãy dùng email trường có tên miền .edu.vn.');if(name.length<3||!sid||String(data.password||'').length<8)throw Error('Cần họ tên, mã sinh viên và mật khẩu ít nhất 8 ký tự.');if(db.users.some(u=>u.email.toLowerCase()===email||String(u.studentId||'').toLowerCase()===sid.toLowerCase()))throw Error('Email hoặc mã sinh viên đã được đăng ký.');const u={id:'SV'+(++db.sequence),name,email,studentId:sid,password:data.password,phone:'',role:'student',status:'active',score:100,balance:0,held:0};db.users.push(u);db.activeUser=u.id;return u;};
+R.login=function(db,data){const email=String(data.email||'').trim().toLowerCase();if(!R.isSchoolEmail(email))throw Error('Email không hợp lệ. Hãy dùng email trường có tên miền .edu.vn.');const u=db.users.find(u=>u.email.toLowerCase()===email&&u.password===data.password);if(!u||u.status!=='active')throw Error('Email, mật khẩu chưa đúng hoặc tài khoản đã bị khóa.');db.activeUser=u.id;return u;};
+R.roleLabels={student:'Sinh viên',staff:'Thủ kho',admin:'Quản trị viên'};
+R.permissionRows=[['Tìm kiếm, xem vật phẩm','Có','Có','Có'],['Đăng tin, thuê đồ, ví, yêu thích','Có','Không','Không'],['Kiểm định, kệ, giao nhận ký gửi','Không','Có','Không'],['Duyệt nội dung P2P','Không','Không','Có'],['Khiếu nại','Gửi','Xử lý nhẹ','Xử lý nặng'],['Tất toán','Chủ đồ P2P','Đơn ký gửi','Hỗ trợ'],['Tài khoản, vai trò, danh mục, cấu hình','Không','Không','Có']];
+function hasHistory(db,id){return db.bookings.some(b=>b.owner===id||b.renter===id)||db.items.some(i=>i.owner===id)||db.inspections.some(i=>i.by===id)||db.consignments.some(c=>c.owner===id||c.staff===id)||db.disputes.some(d=>d.reporter===id||d.resolver===id)||db.ledger.some(l=>l.user===id);}
+R.saveUser=function(db,data,id){const admin=R.role(db,'admin'),u=id?R.user(db,id):null,role=data.role,email=String(data.email||'').trim().toLowerCase(),name=String(data.name||'').trim(),status=data.status;if(!['student','staff','admin'].includes(role)||!['active','locked'].includes(status))throw Error('Vai trò hoặc trạng thái không hợp lệ.');if(name.length<3||!R.isSchoolEmail(email))throw Error('Nhập họ tên và email trường hợp lệ (.edu.vn).');if(db.users.some(x=>x.id!==id&&x.email.toLowerCase()===email))throw Error('Email đã được dùng.');const sid=String(data.studentId||'').trim();if(role==='student'&&(!sid||db.users.some(x=>x.id!==id&&String(x.studentId||'').toLowerCase()===sid.toLowerCase())))throw Error('Mã sinh viên trống hoặc đã được sử dụng.');if((!u||data.password)&&String(data.password||'').length<8)throw Error('Mật khẩu cần ít nhất 8 ký tự.');if(u&&u.id===admin.id&&(role!=='admin'||status!=='active'))throw Error('Không tự hạ quyền hoặc khóa tài khoản quản trị đang sử dụng.');if(u&&u.role!==role&&(hasHistory(db,id)||(u.balance||0)||(u.held||0)))throw Error('Tài khoản đã có dữ liệu nghiệp vụ hoặc tiền ví. Giữ vai trò cũ để bảo toàn lịch sử.');const target=u||{id:'TK'+(++db.sequence)};Object.assign(target,{name,email,phone:String(data.phone||'').trim(),role,status});if(data.password)target.password=data.password;if(role==='student'){target.studentId=sid;target.score??=100;target.balance??=0;target.held??=0;}else{delete target.studentId;delete target.score;delete target.balance;delete target.held;}if(!u)db.users.push(target);return target;};
+R.deleteUser=function(db,id){const a=R.role(db,'admin'),u=R.user(db,id);if(a.id===id)throw Error('Không xóa tài khoản đang sử dụng.');if(hasHistory(db,id)||(u.balance||0)||(u.held||0))throw Error('Tài khoản đã có lịch sử hoặc số dư. Hãy khóa thay vì xóa.');db.users=db.users.filter(x=>x.id!==id);return u;};
+})(window.Rentie);

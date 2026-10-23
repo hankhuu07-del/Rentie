@@ -1,0 +1,3 @@
+button.textlink{appearance:none;border:0;background:transparent;padding:4px 0;text-align:left;white-space:normal;font:inherit;font-weight:650;color:var(--accent);line-height:1.4;}
+.queue-filter label{font-size:.85rem;display:block;}
+[data-hold-until]{font-variant-numeric:tabular-nums;font-size:1.05rem;}
